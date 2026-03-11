@@ -1,0 +1,81 @@
+name: NovaPay DevSecOps Pipeline
+
+on:
+push:
+branches: [ "main" ]
+
+jobs:
+
+terraform-security:
+runs-on: ubuntu-latest
+
+```
+steps:
+  - name: Checkout repo
+    uses: actions/checkout@v3
+
+  - name: Setup Terraform
+    uses: hashicorp/setup-terraform@v2
+
+  - name: Terraform fmt
+    run: terraform fmt -check
+    working-directory: terraform
+
+  - name: Terraform init
+    run: terraform init
+    working-directory: terraform
+
+  - name: Terraform validate
+    run: terraform validate
+    working-directory: terraform
+
+  - name: Run Checkov IaC scan
+    uses: bridgecrewio/checkov-action@master
+    with:
+      directory: terraform
+```
+
+container-security:
+runs-on: ubuntu-latest
+needs: terraform-security
+
+```
+steps:
+  - name: Checkout repo
+    uses: actions/checkout@v3
+
+  - name: Build Docker image
+    run: docker build -t payments-status ./app
+
+  - name: Run Trivy vulnerability scan
+    uses: aquasecurity/trivy-action@master
+    with:
+      image-ref: payments-status
+      format: table
+      exit-code: 1
+      severity: CRITICAL,HIGH
+```
+
+push-image:
+runs-on: ubuntu-latest
+needs: container-security
+
+```
+steps:
+  - name: Checkout repo
+    uses: actions/checkout@v3
+
+  - name: Login to Azure
+    uses: azure/login@v1
+    with:
+      creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+  - name: Login to ACR
+    run: az acr login --name novapayacr123
+
+  - name: Build image
+    run: docker build -t novapayacr123.azurecr.io/payments-status:latest ./app
+
+  - name: Push image
+    run: docker push novapayacr123.azurecr.io/payments-status:latest
+```
